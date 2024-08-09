@@ -5,7 +5,6 @@ import math
 
 from model.temporal_attention import TemporalAttentionLayer
 
-
 class EmbeddingModule(nn.Module):
   def __init__(self, node_features, memory, neighbor_finder, time_encoder, n_layers,
                n_node_features, n_time_features, embedding_dimension, device,

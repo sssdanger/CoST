@@ -1,4 +1,3 @@
-# export LD_PRELOAD="/lib64/libstdc++.so.6.0.21"
 import gc
 import time
 import sys
@@ -6,47 +5,17 @@ import argparse
 import warnings
 
 import torch
-# import torch_scatter
-from resgcn_model import ResGCN_graphcl
-from augmentation import augment
 from pathlib import Path
 import torch.nn.functional as F
 from model.my_tgnh import TGN
 from model.my_sgnh import SGN
 from model.Transformer import *
-from utils.utils import EarlyStopMonitor, get_neighbor_finder
-from utils.dataset import loadTree, loadUdData, loadFNNData, loadFNNTestData
-from torch_geometric.nn import GCNConv
-from tqdm import tqdm
+from utils.utils import get_neighbor_finder
+from utils.dataset import loadData
 import numpy as np
-from torch_scatter import scatter_mean
 from torch import nn
 from sklearn import metrics
 import torch.nn.init as init
-import copy
-from Transformer_utils import *
-# Tensorboard
-from torch.utils.tensorboard import SummaryWriter
-# from graph_augs import Graph_Augmentor
-writer = SummaryWriter()
-from torch_geometric.nn import global_mean_pool, GATConv, SAGEConv, GCNConv, \
-    global_max_pool, global_add_pool, GINConv, TopKPooling, global_sort_pool, GlobalAttention
-from DisenGCN import DisenGCN, Cor_loss
-from torch.nn import Linear, ReLU, Tanh, LeakyReLU
-
-class hawkes(nn.Module):
-    def __init__(self, d_model=770, num_types=1):
-        super(hawkes, self).__init__()
-        # convert hidden vectors into a scalar
-        self.linear = nn.Linear(d_model, num_types)
-        # parameter for the weight of time difference
-        self.alpha = nn.Parameter(torch.tensor(-0.1))
-        # parameter for the softplus function
-        self.beta = nn.Parameter(torch.tensor(1.0))
-
-    def forward(self):
-        pass
-
 
 class Gated_fusion(nn.Module):
     def __init__(self, input_size, out_size=1, dropout=0.2):
@@ -67,10 +36,9 @@ class Gated_fusion(nn.Module):
         out = torch.sum(emb_score * emb, dim=0)
         return out
 
-
-class Net(nn.Module):
+class CoST(nn.Module):
     def __init__(self, args, device):
-        super(Net, self).__init__()
+        super(CoST, self).__init__()
         self.device = device
 
         self.tgn = TGN(device=device,
@@ -90,45 +58,29 @@ class Net(nn.Module):
         self.Transformer = TransformerModel(ninp=768, nhead=2, nhid=768, nlayers=2, dropout=0.2)
         self.Transformer2 = TransformerModel(ninp=768 * 2, nhead=2, nhid=768, nlayers=2, dropout=0.2)
         self.fc2 = torch.nn.Linear(args.memory_dim, 2)
-
         self.fc1 = torch.nn.Linear(770, 2)  # Linear for forward Dynamic Interaction
-        # self.BiNet = BiNet(768, 192, 192)
         self.fc3 = torch.nn.Linear(768 * 2, 768)
 
         self.act_tanh = torch.nn.Tanh()
         self.softmax = torch.nn.Softmax(dim=1)
         self.gated_fusion = Gated_fusion(input_size=768 + 2)
         self.batchsize = args.bs
-        self.hawkes_module = hawkes(d_model=768, num_types=1)
 
     def forward(self, data, train_ngh_finder):
-        """
-        define the Transformer like BERT, take the 1 as result for classification.
-        """
-        # print(data.unique_features.shape)
-        # print(data.sources.size)
         updated_embedding = self.tgn(train_ngh_finder, self.batchsize, data.sources, data.destinations,
                                      data.timestamps, data.unique_features, data.node_depth, data.edge_idxs,
                                      data.n_unique_nodes,
                                      data.adj_list)
-
         updated_embedding_struc1, updated_embedding_struc2 = self.sgn(data)
-
         avg_time = np.mean(data.time_spans)
-        # print(type(avg_time))
         time = data.timestamps[-1]
-
-        # print(type(time))
         temp_ele = np.append(avg_time, time)
-
-        # print(temp_ele)
         temp_ele = (torch.from_numpy(temp_ele.astype(float)).to(self.device)).float().view(1,
                                                                                               -1)  # dtype=torch.float64
         updated_embedding = updated_embedding.unsqueeze(dim=1).float()
         # # updated_embedding_struc = updated_embedding_struc.unsqueeze(dim=1).float()
         timestamps = data.timestamps  # if len(data.timestamps) <=128 else data.timestamps[:128]
         timestamps = torch.from_numpy(timestamps).to(device)
-        # print(timestamps.shape)
 
         node_depth = data.node_depth[1:]
         node_child = data.node_child[1:]
@@ -143,9 +95,6 @@ class Net(nn.Module):
 
         updated_embedding_time = self.Transformer(updated_embedding, timestamps, has_mask=True)
 
-        event_ll = 0
-        non_event_ll = 0
-
 
         out_feature_time = torch.mean(updated_embedding_time, dim=0)
         out_feature_time = out_feature_time.view(1,-1)
@@ -154,22 +103,18 @@ class Net(nn.Module):
         out_feature_struc2 = updated_embedding_struc2
         out_feature_struc = torch.cat((out_feature_struc1, out_feature_struc2), dim=0)
         out_feature_struc = out_feature_struc.view(1, -1)
-        #
-        # # print(out_feature_struc.shape)
-        # # print(temp_ele.shape)
-        # # input()
+
         out_feature_time = torch.cat((out_feature_time, temp_ele), dim=1)
         out_feature_struc = self.fc3(out_feature_struc)
         out_feature_struc = torch.cat((out_feature_struc, struc_ele), dim=1)
-        # print(out_feature_time.shape)
-        # print(out_feature_struc.shape)
         # --------------------gated_fusion-----------------#
         out_feature = self.gated_fusion(out_feature_time, out_feature_struc)
 
         out_feature = self.fc1(self.act_tanh(out_feature))
         class_outputs = self.softmax(out_feature.view(1, -1))
 
-        return class_outputs, event_ll, non_event_ll
+        return class_outputs
+
 torch.manual_seed(0)
 np.random.seed(0)
 np.set_printoptions(suppress=True)
@@ -237,35 +182,24 @@ print("Now using aggregator function is ", args.aggregator)
 weight_decay = 1e-4
 patience = 10
 
-Path("./saved_models/{}/{}_fold/".format(args.aggregator, args.fd)).mkdir(parents=True, exist_ok=True)
-
-get_model_path = lambda \
-        epoch, train_accuracy, test_accuracy: f'./saved_models/{args.aggregator}/{args.fd}_fold/{epoch}-{train_accuracy}-{test_accuracy}.pth'
-
 # Set device
 device_string = 'cuda:{}'.format(args.gpu) if torch.cuda.is_available() else 'cpu'
 device = torch.device(device_string)
 
-# treeDic = loadTree(args.data)
-# print("len(treeDic)", len(treeDic))
-treeDic = None
-# random.shuffle(treeDic)
 fold5_x_train = []  # all data
 fold5_x_test = []  # all data
 
 
-# for i in treeDic:
-#     fold5_x_train.append(i)
-#     fold5_x_test.append(i)
+
 
 
 def to_np(x):
     return x.cpu().detach().numpy()
 
 
-def train_TGN(args, treeDic, x_test, x_train, weight_decay, patience, device):
+def train(args, x_test, x_train, weight_decay, patience, device):
     print('Training on device: ', device)
-    model = Net(args, device)
+    model = CoST(args, device)
     model = model.to(device)
     if args.opt == 'RMSprop':
         print("RMSprop")
@@ -276,7 +210,7 @@ def train_TGN(args, treeDic, x_test, x_train, weight_decay, patience, device):
 
     criterion = nn.CrossEntropyLoss()  # nn.NLLLoss()#
 
-    traindata_list, testdata_list = loadFNNData(x_train, x_test)
+    traindata_list, testdata_list = loadData(x_train, x_test)
     print("len(traindata_list)", len(traindata_list))
     print("len(testdata_list)", len(testdata_list))
 
@@ -284,7 +218,6 @@ def train_TGN(args, treeDic, x_test, x_train, weight_decay, patience, device):
         start_epoch = time.time()
         num_item = 0
         total_train_loss = 0.0
-        avg_train_loss = 0.0
         ok = 0
         train_pred = []
         train_true = []
@@ -297,7 +230,7 @@ def train_TGN(args, treeDic, x_test, x_train, weight_decay, patience, device):
             label = torch.from_numpy(label).to(device)
             train_ngh_finder = get_neighbor_finder(item, uniform=False)
             model.tgn.set_neighbor_finder(train_ngh_finder)
-            class_outputs, event_ll, non_event_ll = model(item, train_ngh_finder)
+            class_outputs = model(item, train_ngh_finder)
             class_loss = criterion(class_outputs, label.long())
             loss = class_loss
             loss.backward()
@@ -322,22 +255,19 @@ def train_TGN(args, treeDic, x_test, x_train, weight_decay, patience, device):
         print("total_train_loss:", total_train_loss)
         avg_train_loss = total_train_loss / num_item
         train_accuracy = round(ok / num_item, 3)
-
         num_item = 0
         ok = 0
 
-        test_accuracy = 0.000
         test_pred = []
         test_true = []
         model = model.eval()
         for item in testdata_list:
             num_item += 1
-            index = item.id
             label = np.array([item.labels])
             label = torch.from_numpy(label).to(device)
             test_ngh_finder = get_neighbor_finder(item, uniform=False)
             model.tgn.set_neighbor_finder(test_ngh_finder)
-            class_outputs,_,_ = model(item, test_ngh_finder)
+            class_outputs = model(item, test_ngh_finder)
             pred = torch.argmax(class_outputs, dim=1)
             if pred[0] == label[0]:
                 ok += 1
@@ -358,7 +288,7 @@ def train_TGN(args, treeDic, x_test, x_train, weight_decay, patience, device):
         print(
             "Epoch id: {}, Epoch time: {:.3f} , avg_train_loss: {:.3f}, train_accuracy: {:.3f}, test_accuracy: {:.3f}".format(
                 epoch, epoch_time, avg_train_loss, train_accuracy, test_accuracy))
-        torch.save(model.state_dict(), get_model_path(epoch, round(train_accuracy, 3), round(test_accuracy, 3)))
+
 
 
 
@@ -399,19 +329,16 @@ if __name__ == '__main__':
     fold4_x_test = np.load('fnn_5_fold_ids/Gossi_fold4_test.npy')
     fold4_x_train = np.load('fnn_5_fold_ids/Gossi_fold4_train.npy')
 
-    is_train = True
-    treeDic = 1
-    if is_train:
 
-        args.fd = 0
-        train_TGN(args, treeDic, fold0_x_test, fold0_x_train, weight_decay, patience, device)
-        args.fd = 1
-        train_TGN(args, treeDic, fold1_x_test, fold1_x_train, weight_decay, patience, device)
-        args.fd = 2
-        train_TGN(args, treeDic, fold2_x_test, fold2_x_train, weight_decay, patience, device)
-        args.fd = 3
-        train_TGN(args, treeDic, fold3_x_test, fold3_x_train, weight_decay, patience, device)
-        args.fd = 4
-        train_TGN(args, treeDic, fold4_x_test, fold4_x_train, weight_decay, patience, device)
+    args.fd = 0
+    train(args, fold0_x_test, fold0_x_train, weight_decay, patience, device)
+    args.fd = 1
+    train(args, fold1_x_test, fold1_x_train, weight_decay, patience, device)
+    args.fd = 2
+    train(args, fold2_x_test, fold2_x_train, weight_decay, patience, device)
+    args.fd = 3
+    train(args, fold3_x_test, fold3_x_train, weight_decay, patience, device)
+    args.fd = 4
+    train(args, fold4_x_test, fold4_x_train, weight_decay, patience, device)
 
 

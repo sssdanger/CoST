@@ -11,10 +11,7 @@ class GraphAttentionEmbedding(nn.Module):
         self.attention_models = torch.nn.ModuleList([MultiHeadAttention(input_dim=768, num_heads=n_heads) for _ in range(2)])
 
     def compute_embedding(self, q, k):
-        # print(q.shape)
-        # # [768]
-        # print(k.shape)
-        # # [1,7,768]
+
         q = q.unsqueeze(0).unsqueeze(0)
         # print(q.shape)
         sub_graph_embedding = self.attention_models[0](q, k, k)

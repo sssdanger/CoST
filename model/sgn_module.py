@@ -4,7 +4,6 @@ import torch.nn.functional as F
 import numpy as np
 import math
 
-
 class GraphAttentionEmbedding(nn.Module):
     def __init__(self, node_features, n_layers, device, n_heads=2, dropout=0.1):
         super(GraphAttentionEmbedding, self).__init__()

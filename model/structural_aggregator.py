@@ -13,7 +13,6 @@ class Attention(nn.Module):
         # 计算注意力权重
         scores = self.W(nodes.mailbox['h']).squeeze(dim=-1)
         attn_weights = torch.softmax(scores, dim=1)
-        # 使用注意力权重加权求和得到 h_tild
         h_tild = torch.sum(attn_weights.unsqueeze(dim=-1) * nodes.mailbox['h'], dim=1)
         return h_tild
 class TreeAggregatorCell(nn.Module):

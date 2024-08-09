@@ -2,7 +2,6 @@ from collections import defaultdict
 import torch
 import numpy as np
 
-
 class MessageAggregator(torch.nn.Module):
   """
   Abstract class for the message aggregator module, which given a batch of node ids and

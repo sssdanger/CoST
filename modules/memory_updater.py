@@ -6,7 +6,6 @@ class MemoryUpdater(nn.Module):
   def update_memory(self, unique_node_ids, unique_messages, timestamps):
     pass
 
-
 class SequenceMemoryUpdater(MemoryUpdater):
   def __init__(self, memory, message_dimension, memory_dimension, device):
     super(SequenceMemoryUpdater, self).__init__()

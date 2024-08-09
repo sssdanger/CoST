@@ -1,9 +1,7 @@
 import torch
 import numpy as np
 
-
 class TimeEncode(torch.nn.Module):
-  # Time Encoding proposed by TGAT
   def __init__(self, dimension):
     super(TimeEncode, self).__init__()
     self.dimension = dimension

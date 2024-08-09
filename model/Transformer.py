@@ -3,7 +3,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
-# Temporarily leave PositionalEncoding module here. Will be moved somewhere else.
+
 class PositionalEncoding(nn.Module):
 
     def __init__(self, d_model, dropout=0.1, max_len=5000):
@@ -79,16 +79,7 @@ class TransformerModel(nn.Module):
         self.transformer_encoder = TransformerEncoder(encoder_layers, nlayers)
         #self.encoder = nn.Embedding(ntoken, ninp)
         self.ninp = ninp
-        #self.decoder = nn.Linear(ninp, ntoken)
 
-        #self.linear = nn.Linear(ninp, 1)
-
-        # parameter for the weight of time difference
-        #self.alpha = nn.Parameter(torch.tensor(-0.1))
-
-        # parameter for the softplus function
-        #self.beta = nn.Parameter(torch.tensor(1.0))
-        #self.init_weights()
 
     def _generate_square_subsequent_mask(self, sz):
         mask = (torch.triu(torch.ones(sz, sz)) == 1).transpose(0, 1)

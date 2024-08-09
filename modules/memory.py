@@ -4,7 +4,6 @@ from torch import nn
 from collections import defaultdict
 from copy import deepcopy
 
-
 class Memory(nn.Module):
 
   def __init__(self, n_nodes, memory_dimension, input_dimension, message_dimension=None,

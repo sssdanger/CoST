@@ -12,7 +12,6 @@ from modules.memory_updater import get_memory_updater
 from modules.embedding_module import get_embedding_module
 from model.time_encoding import TimeEncode
 
-
 class TGN(torch.nn.Module):
   def __init__(self, device, n_layers=2,
                n_heads=2, dropout=0.1, use_memory=False,

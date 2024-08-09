@@ -3,7 +3,6 @@ from torch import nn
 
 from utils.utils import MergeLayer
 
-
 class TemporalAttentionLayer(torch.nn.Module):
     """
     Temporal attention layer. Return the temporal embedding of a node given the node itself,
